@@ -6,7 +6,16 @@ import re
 from functools import wraps
 from urllib.parse import urlparse
 
-from flask import Blueprint, flash, redirect, render_template, request, session, url_for
+from flask import (
+    Blueprint,
+    flash,
+    make_response,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
 from peewee import IntegrityError, OperationalError
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -97,6 +106,9 @@ def _hydrate_cache_from_db(slug: str) -> tuple[dict, str] | tuple[None, None]:
         target_url=url_obj.target_url,
         click_count=url_obj.click_count,
         created_at=url_obj.created_at,
+        metadata_title=url_obj.metadata_title,
+        metadata_description=url_obj.metadata_description,
+        metadata_tags=url_obj.metadata_tags,
     )
     return (
         {
@@ -104,6 +116,9 @@ def _hydrate_cache_from_db(slug: str) -> tuple[dict, str] | tuple[None, None]:
             "target_url": url_obj.target_url,
             "click_count": url_obj.click_count,
             "created_at": url_obj.created_at.isoformat() + "Z",
+            "metadata_title": url_obj.metadata_title,
+            "metadata_description": url_obj.metadata_description,
+            "metadata_tags": url_obj.metadata_tags,
         },
         "database",
     )
@@ -242,6 +257,9 @@ def create_url(user: User):
         target_url=url_obj.target_url,
         click_count=url_obj.click_count,
         created_at=url_obj.created_at,
+        metadata_title=url_obj.metadata_title,
+        metadata_description=url_obj.metadata_description,
+        metadata_tags=url_obj.metadata_tags,
     )
 
     flash("Short URL created.", "success")
@@ -355,6 +373,9 @@ def edit_url(user: User, url_id: int):
         target_url=url_obj.target_url,
         click_count=url_obj.click_count,
         created_at=url_obj.created_at,
+        metadata_title=url_obj.metadata_title,
+        metadata_description=url_obj.metadata_description,
+        metadata_tags=url_obj.metadata_tags,
     )
 
     flash("Short URL updated.", "success")
@@ -449,10 +470,22 @@ def resolve_short_url(slug: str):
                 target_url=url_obj.target_url,
                 click_count=url_obj.click_count,
                 created_at=url_obj.created_at,
+                metadata_title=url_obj.metadata_title,
+                metadata_description=url_obj.metadata_description,
+                metadata_tags=url_obj.metadata_tags,
             )
         else:
             short_url_cache.increment_click_count(slug)
     except OperationalError:
         short_url_cache.increment_click_count(slug)
 
-    return redirect(url_payload["target_url"], code=302)
+    html = render_template(
+        "resolve_redirect.html",
+        target_url=url_payload["target_url"],
+        metadata_title=url_payload.get("metadata_title"),
+        metadata_description=url_payload.get("metadata_description"),
+        metadata_tags=url_payload.get("metadata_tags"),
+    )
+    response = make_response(html, 302)
+    response.headers["Location"] = url_payload["target_url"]
+    return response

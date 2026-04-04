@@ -132,13 +132,23 @@ class UrlCache:
         return from_redis, "redis"
 
     def set(
-        self, slug: str, target_url: str, click_count: int, created_at: datetime
+        self,
+        slug: str,
+        target_url: str,
+        click_count: int,
+        created_at: datetime,
+        metadata_title: str | None = None,
+        metadata_description: str | None = None,
+        metadata_tags: str | None = None,
     ) -> None:
         payload = {
             "slug": slug,
             "target_url": target_url,
             "click_count": click_count,
             "created_at": created_at.isoformat() + "Z",
+            "metadata_title": metadata_title,
+            "metadata_description": metadata_description,
+            "metadata_tags": metadata_tags,
         }
 
         self.memory.set(slug, payload)
