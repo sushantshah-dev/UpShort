@@ -16,4 +16,4 @@ class Visitor(BaseModel):
 
     class Meta:
         table_name = "short_url_visitors"
-        indexes = ((('short_url', 'fingerprint'), True),)
+        indexes = ((("short_url", "fingerprint"), True),)

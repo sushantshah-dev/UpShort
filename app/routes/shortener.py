@@ -178,7 +178,9 @@ def dashboard(user: User):
     try:
         urls = Url.select().where(Url.user == user).order_by(Url.created_at.desc())
     except OperationalError:
-        flash("Database is temporarily unavailable. Cached redirects still work.", "error")
+        flash(
+            "Database is temporarily unavailable. Cached redirects still work.", "error"
+        )
         urls = []
 
     return render_template("dashboard.html", user=user, urls=urls)
@@ -213,7 +215,10 @@ def create_url(user: User):
         return render_template("url_form.html", form_mode="create", form=form), 400
 
     if not _is_valid_slug(slug):
-        flash("Slug must be 3-64 characters and use letters, numbers, '_' or '-'.", "error")
+        flash(
+            "Slug must be 3-64 characters and use letters, numbers, '_' or '-'.",
+            "error",
+        )
         return render_template("url_form.html", form_mode="create", form=form), 400
 
     try:
@@ -288,15 +293,33 @@ def edit_url(user: User, url_id: int):
 
     if not target_url or not slug:
         flash("Target URL and slug are required.", "error")
-        return render_template("url_form.html", form_mode="edit", url_obj=url_obj, form=form), 400
+        return (
+            render_template(
+                "url_form.html", form_mode="edit", url_obj=url_obj, form=form
+            ),
+            400,
+        )
 
     if not _is_valid_url(target_url):
         flash("Target URL must be an absolute http/https URL.", "error")
-        return render_template("url_form.html", form_mode="edit", url_obj=url_obj, form=form), 400
+        return (
+            render_template(
+                "url_form.html", form_mode="edit", url_obj=url_obj, form=form
+            ),
+            400,
+        )
 
     if not _is_valid_slug(slug):
-        flash("Slug must be 3-64 characters and use letters, numbers, '_' or '-'.", "error")
-        return render_template("url_form.html", form_mode="edit", url_obj=url_obj, form=form), 400
+        flash(
+            "Slug must be 3-64 characters and use letters, numbers, '_' or '-'.",
+            "error",
+        )
+        return (
+            render_template(
+                "url_form.html", form_mode="edit", url_obj=url_obj, form=form
+            ),
+            400,
+        )
 
     url_obj.slug = slug
     url_obj.target_url = target_url
@@ -309,10 +332,20 @@ def edit_url(user: User, url_id: int):
         url_obj.save()
     except IntegrityError:
         flash("Slug already exists. Try a different one.", "error")
-        return render_template("url_form.html", form_mode="edit", url_obj=url_obj, form=form), 409
+        return (
+            render_template(
+                "url_form.html", form_mode="edit", url_obj=url_obj, form=form
+            ),
+            409,
+        )
     except OperationalError:
         flash("Database is temporarily unavailable. Please try again.", "error")
-        return render_template("url_form.html", form_mode="edit", url_obj=url_obj, form=form), 503
+        return (
+            render_template(
+                "url_form.html", form_mode="edit", url_obj=url_obj, form=form
+            ),
+            503,
+        )
 
     if old_slug != url_obj.slug:
         short_url_cache.delete(old_slug)
@@ -370,7 +403,9 @@ def resolve_short_url(slug: str):
             device_type = _detect_device_type(user_agent)
 
             fingerprint_source = f"{client_ip or 'unknown'}|{user_agent}"
-            visitor_fingerprint = hashlib.sha256(fingerprint_source.encode("utf-8")).hexdigest()
+            visitor_fingerprint = hashlib.sha256(
+                fingerprint_source.encode("utf-8")
+            ).hexdigest()
 
             new_visitor = False
             try:
