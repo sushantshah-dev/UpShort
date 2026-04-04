@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 
 from flask import (
     Blueprint,
+    abort,
     flash,
     make_response,
     redirect,
@@ -39,6 +40,10 @@ _RESERVED_SLUGS = {
 }
 
 
+def _utcnow() -> dt.datetime:
+    return dt.datetime.now(dt.UTC).replace(tzinfo=None)
+
+
 def _is_valid_url(candidate: str) -> bool:
     parsed = urlparse(candidate)
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
@@ -53,6 +58,48 @@ def _extract_client_ip() -> str | None:
     if forwarded:
         return forwarded.split(",")[0].strip()[:64] or None
     return (request.remote_addr or "")[:64] or None
+
+
+def _parse_optional_expires_at(raw_value: str) -> dt.datetime | None:
+    if not raw_value:
+        return None
+
+    normalized = raw_value.strip()
+    if not normalized:
+        return None
+
+    for fmt in ("%Y-%m-%dT%H:%M", "%Y-%m-%dT%H:%M:%S"):
+        try:
+            return dt.datetime.strptime(normalized, fmt)
+        except ValueError:
+            continue
+
+    raise ValueError("Invalid expiration timestamp format.")
+
+
+def _isoformat_or_none(value: dt.datetime | None) -> str | None:
+    if value is None:
+        return None
+    return value.isoformat() + "Z"
+
+
+def _is_resource_inactive(resource) -> tuple[bool, int]:
+    if not resource.get("is_active", True):
+        return True, 404
+
+    expires_at_raw = resource.get("expires_at")
+    if not expires_at_raw:
+        return False, 200
+
+    expires_at = expires_at_raw
+    if isinstance(expires_at_raw, str):
+        normalized = expires_at_raw.removesuffix("Z")
+        expires_at = dt.datetime.fromisoformat(normalized)
+
+    if expires_at <= _utcnow():
+        return True, 410
+
+    return False, 200
 
 
 def _detect_device_type(user_agent: str) -> str:
@@ -106,6 +153,8 @@ def _hydrate_cache_from_db(slug: str) -> tuple[dict, str] | tuple[None, None]:
         target_url=url_obj.target_url,
         click_count=url_obj.click_count,
         created_at=url_obj.created_at,
+        is_active=url_obj.is_active,
+        expires_at=url_obj.expires_at,
         metadata_title=url_obj.metadata_title,
         metadata_description=url_obj.metadata_description,
         metadata_tags=url_obj.metadata_tags,
@@ -115,7 +164,9 @@ def _hydrate_cache_from_db(slug: str) -> tuple[dict, str] | tuple[None, None]:
             "slug": url_obj.slug,
             "target_url": url_obj.target_url,
             "click_count": url_obj.click_count,
-            "created_at": url_obj.created_at.isoformat() + "Z",
+            "created_at": _isoformat_or_none(url_obj.created_at),
+            "is_active": url_obj.is_active,
+            "expires_at": _isoformat_or_none(url_obj.expires_at),
             "metadata_title": url_obj.metadata_title,
             "metadata_description": url_obj.metadata_description,
             "metadata_tags": url_obj.metadata_tags,
@@ -209,13 +260,32 @@ def create_url(user: User):
 
     target_url = request.form.get("target_url", "").strip()
     slug = request.form.get("slug", "").strip()
+    is_active = request.form.get("is_active") == "on"
+    expires_at_raw = request.form.get("expires_at", "").strip()
     metadata_title = request.form.get("metadata_title", "").strip()
     metadata_description = request.form.get("metadata_description", "").strip()
     metadata_tags = request.form.get("metadata_tags", "").strip()
 
+    try:
+        expires_at = _parse_optional_expires_at(expires_at_raw)
+    except ValueError:
+        form = {
+            "target_url": target_url,
+            "slug": slug,
+            "is_active": is_active,
+            "expires_at": expires_at_raw,
+            "metadata_title": metadata_title,
+            "metadata_description": metadata_description,
+            "metadata_tags": metadata_tags,
+        }
+        flash("Expiration must be a valid date and time.", "error")
+        return render_template("url_form.html", form_mode="create", form=form), 400
+
     form = {
         "target_url": target_url,
         "slug": slug,
+        "is_active": is_active,
+        "expires_at": expires_at_raw,
         "metadata_title": metadata_title,
         "metadata_description": metadata_description,
         "metadata_tags": metadata_tags,
@@ -241,6 +311,8 @@ def create_url(user: User):
             user=user,
             slug=slug,
             target_url=target_url,
+            is_active=is_active,
+            expires_at=expires_at,
             metadata_title=metadata_title or None,
             metadata_description=metadata_description or None,
             metadata_tags=metadata_tags or None,
@@ -257,6 +329,8 @@ def create_url(user: User):
         target_url=url_obj.target_url,
         click_count=url_obj.click_count,
         created_at=url_obj.created_at,
+        is_active=url_obj.is_active,
+        expires_at=url_obj.expires_at,
         metadata_title=url_obj.metadata_title,
         metadata_description=url_obj.metadata_description,
         metadata_tags=url_obj.metadata_tags,
@@ -287,6 +361,12 @@ def edit_url(user: User, url_id: int):
             form={
                 "target_url": url_obj.target_url,
                 "slug": url_obj.slug,
+                "is_active": url_obj.is_active,
+                "expires_at": (
+                    url_obj.expires_at.strftime("%Y-%m-%dT%H:%M")
+                    if url_obj.expires_at
+                    else ""
+                ),
                 "metadata_title": url_obj.metadata_title or "",
                 "metadata_description": url_obj.metadata_description or "",
                 "metadata_tags": url_obj.metadata_tags or "",
@@ -297,13 +377,37 @@ def edit_url(user: User, url_id: int):
 
     target_url = request.form.get("target_url", "").strip()
     slug = request.form.get("slug", "").strip()
+    is_active = request.form.get("is_active") == "on"
+    expires_at_raw = request.form.get("expires_at", "").strip()
     metadata_title = request.form.get("metadata_title", "").strip()
     metadata_description = request.form.get("metadata_description", "").strip()
     metadata_tags = request.form.get("metadata_tags", "").strip()
 
+    try:
+        expires_at = _parse_optional_expires_at(expires_at_raw)
+    except ValueError:
+        form = {
+            "target_url": target_url,
+            "slug": slug,
+            "is_active": is_active,
+            "expires_at": expires_at_raw,
+            "metadata_title": metadata_title,
+            "metadata_description": metadata_description,
+            "metadata_tags": metadata_tags,
+        }
+        flash("Expiration must be a valid date and time.", "error")
+        return (
+            render_template(
+                "url_form.html", form_mode="edit", url_obj=url_obj, form=form
+            ),
+            400,
+        )
+
     form = {
         "target_url": target_url,
         "slug": slug,
+        "is_active": is_active,
+        "expires_at": expires_at_raw,
         "metadata_title": metadata_title,
         "metadata_description": metadata_description,
         "metadata_tags": metadata_tags,
@@ -341,10 +445,12 @@ def edit_url(user: User, url_id: int):
 
     url_obj.slug = slug
     url_obj.target_url = target_url
+    url_obj.is_active = is_active
+    url_obj.expires_at = expires_at
     url_obj.metadata_title = metadata_title or None
     url_obj.metadata_description = metadata_description or None
     url_obj.metadata_tags = metadata_tags or None
-    url_obj.updated_at = dt.datetime.utcnow()
+    url_obj.updated_at = _utcnow()
 
     try:
         url_obj.save()
@@ -373,6 +479,8 @@ def edit_url(user: User, url_id: int):
         target_url=url_obj.target_url,
         click_count=url_obj.click_count,
         created_at=url_obj.created_at,
+        is_active=url_obj.is_active,
+        expires_at=url_obj.expires_at,
         metadata_title=url_obj.metadata_title,
         metadata_description=url_obj.metadata_description,
         metadata_tags=url_obj.metadata_tags,
@@ -411,13 +519,35 @@ def delete_url(user: User, url_id: int):
 def resolve_short_url(slug: str):
     url_payload, _source = _hydrate_cache_from_db(slug)
     if url_payload is None:
-        flash("Short URL not found.", "error")
-        return redirect(url_for("shortener.login"))
+        abort(404)
+
+    is_inactive, status_code = _is_resource_inactive(url_payload)
+    if is_inactive:
+        abort(status_code)
 
     try:
         url_obj = Url.get_or_none(Url.slug == slug)
         if url_obj is not None:
-            now = dt.datetime.utcnow()
+            resource_payload = {
+                "is_active": url_obj.is_active,
+                "expires_at": _isoformat_or_none(url_obj.expires_at),
+            }
+            is_inactive, status_code = _is_resource_inactive(resource_payload)
+            if is_inactive:
+                short_url_cache.set(
+                    slug=url_obj.slug,
+                    target_url=url_obj.target_url,
+                    click_count=url_obj.click_count,
+                    created_at=url_obj.created_at,
+                    is_active=url_obj.is_active,
+                    expires_at=url_obj.expires_at,
+                    metadata_title=url_obj.metadata_title,
+                    metadata_description=url_obj.metadata_description,
+                    metadata_tags=url_obj.metadata_tags,
+                )
+                abort(status_code)
+
+            now = _utcnow()
             client_ip = _extract_client_ip()
             user_agent = (request.headers.get("User-Agent") or "")[:512]
             referrer = (request.referrer or "")[:512] or None
@@ -470,6 +600,8 @@ def resolve_short_url(slug: str):
                 target_url=url_obj.target_url,
                 click_count=url_obj.click_count,
                 created_at=url_obj.created_at,
+                is_active=url_obj.is_active,
+                expires_at=url_obj.expires_at,
                 metadata_title=url_obj.metadata_title,
                 metadata_description=url_obj.metadata_description,
                 metadata_tags=url_obj.metadata_tags,

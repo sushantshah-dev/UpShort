@@ -2,7 +2,8 @@ import os
 
 from dotenv import load_dotenv
 from flask import Flask, jsonify
-from peewee import OperationalError
+from peewee import BooleanField, DateTimeField, OperationalError
+from playhouse.migrate import PostgresqlMigrator, migrate
 
 from app.database import db, init_db
 from app.models import ALL_MODELS
@@ -20,6 +21,27 @@ def create_app():
 
     db_bootstrap_state = {"ready": False}
 
+    def _ensure_url_state_columns() -> None:
+        migrator = PostgresqlMigrator(db)
+        existing_columns = {column.name for column in db.get_columns("short_urls")}
+        operations = []
+
+        if "is_active" not in existing_columns:
+            operations.append(
+                migrator.add_column(
+                    "short_urls", "is_active", BooleanField(default=True)
+                )
+            )
+        if "expires_at" not in existing_columns:
+            operations.append(
+                migrator.add_column(
+                    "short_urls", "expires_at", DateTimeField(null=True)
+                )
+            )
+
+        if operations:
+            migrate(*operations)
+
     def _bootstrap_database_if_possible() -> bool:
         if db_bootstrap_state["ready"]:
             return True
@@ -27,6 +49,7 @@ def create_app():
         try:
             db.connect(reuse_if_open=True)
             db.create_tables(ALL_MODELS, safe=True)
+            _ensure_url_state_columns()
             seed_database_if_empty()
             db_bootstrap_state["ready"] = True
             return True

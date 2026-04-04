@@ -11,6 +11,7 @@
     <tr>
       <th>Slug</th>
       <th>Target URL</th>
+      <th>State</th>
       <th>Metadata</th>
       <th>Metrics</th>
       <th>Actions</th>
@@ -24,6 +25,14 @@
         <a href="{{ url_for('shortener.resolve_short_url', slug=item.slug, _external=True) }}" target="_blank">{{ url_for('shortener.resolve_short_url', slug=item.slug, _external=True) }}</a>
       </td>
       <td><a href="{{ item.target_url }}" target="_blank">{{ item.target_url }}</a></td>
+      <td>
+        {% if item.is_active %}
+          Active
+        {% else %}
+          Disabled
+        {% endif %}<br>
+        Expires: {{ item.expires_at or '-' }}
+      </td>
       <td>
         {{ item.metadata_title or '-' }}<br>
         {{ item.metadata_tags or '' }}

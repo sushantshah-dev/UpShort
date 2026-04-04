@@ -16,6 +16,20 @@
     <small>Allowed: letters, numbers, '-' and '_', 3-64 chars.</small>
   </p>
 
+  <p>
+    <label>
+      <input name="is_active" type="checkbox" {% if form.is_active is not defined or form.is_active %}checked{% endif %}>
+      Link is active
+    </label><br>
+    <small>Disabled links return 404 and never redirect.</small>
+  </p>
+
+  <p>
+    <label for="expires_at">Expires At</label><br>
+    <input id="expires_at" name="expires_at" type="datetime-local" value="{{ form.expires_at or '' }}"><br>
+    <small>Expired links return 410 Gone.</small>
+  </p>
+
   <h3>Metadata</h3>
 
   <p>
