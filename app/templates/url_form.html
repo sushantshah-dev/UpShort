@@ -49,7 +49,7 @@
 
   <p>
     <button type="submit">{% if form_mode == 'edit' %}Update URL{% else %}Create URL{% endif %}</button>
-    <a href="{{ url_for('shortener.dashboard') }}">Cancel</a>
+    <a href="{{ url_for('dashboard.dashboard') }}">Cancel</a>
   </p>
 </form>
 {% endblock %}

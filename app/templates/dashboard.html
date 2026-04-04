@@ -3,7 +3,7 @@
 {% block content %}
 <h2>Your URLs</h2>
 <p>Signed in as {{ user.email }}</p>
-<p><a href="{{ url_for('shortener.create_url') }}">Create URL</a></p>
+<p><a href="{{ url_for('urls.create_url') }}">Create URL</a></p>
 
 {% if urls %}
 <table border="1" cellpadding="6" cellspacing="0">
@@ -22,7 +22,7 @@
     <tr>
       <td>
         <strong>{{ item.slug }}</strong><br>
-        <a href="{{ url_for('shortener.resolve_short_url', slug=item.slug, _external=True) }}" target="_blank">{{ url_for('shortener.resolve_short_url', slug=item.slug, _external=True) }}</a>
+        <a href="{{ url_for('redirects.resolve_short_url', slug=item.slug, _external=True) }}" target="_blank">{{ url_for('redirects.resolve_short_url', slug=item.slug, _external=True) }}</a>
       </td>
       <td><a href="{{ item.target_url }}" target="_blank">{{ item.target_url }}</a></td>
       <td>
@@ -44,8 +44,8 @@
         Last click: {{ item.last_clicked_at or '-' }}
       </td>
       <td>
-        <a href="{{ url_for('shortener.edit_url', url_id=item.id) }}">Edit</a>
-        <form action="{{ url_for('shortener.delete_url', url_id=item.id) }}" method="post" onsubmit="return confirm('Delete this URL?');">
+        <a href="{{ url_for('urls.edit_url', url_id=item.id) }}">Edit</a>
+        <form action="{{ url_for('urls.delete_url', url_id=item.id) }}" method="post" onsubmit="return confirm('Delete this URL?');">
           <button type="submit">Delete</button>
         </form>
       </td>
