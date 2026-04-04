@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install \
+            "flask>=3.1" \
+            "peewee>=3.17" \
+            "psycopg2-binary>=2.9" \
+            "python-dotenv>=1.0" \
+            "redis>=5.2" \
+            "werkzeug>=3.1" \
+            "ruff>=0.8" \
+            "black>=24.10"
+
+      - name: Lint
+        run: ruff check app run.py
+
+      - name: Format check
+        run: black --check app run.py
+
+      - name: Compile Python
+        run: python -m compileall app run.py
+
+      - name: Smoke test
+        run: |
+          python - <<'PY'
+          from app import create_app
+
+          app = create_app()
+          assert app is not None
+          print('create_app OK')
+          PY
