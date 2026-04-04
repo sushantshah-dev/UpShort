@@ -126,22 +126,128 @@ def dashboard(user: User):
 
 @shortener_bp.route("/urls/new", methods=["GET", "POST"])
 @_login_required
-def create_url(_user: User):
-    flash("Create URL is coming next.", "error")
+def create_url(user: User):
+    if request.method == "GET":
+        return render_template("url_form.html", form_mode="create", form={})
+
+    target_url = request.form.get("target_url", "").strip()
+    slug = request.form.get("slug", "").strip()
+    metadata_title = request.form.get("metadata_title", "").strip()
+    metadata_description = request.form.get("metadata_description", "").strip()
+    metadata_tags = request.form.get("metadata_tags", "").strip()
+
+    form = {
+        "target_url": target_url,
+        "slug": slug,
+        "metadata_title": metadata_title,
+        "metadata_description": metadata_description,
+        "metadata_tags": metadata_tags,
+    }
+
+    if not target_url or not slug:
+        flash("Target URL and slug are required.", "error")
+        return render_template("url_form.html", form_mode="create", form=form), 400
+
+    if not _is_valid_url(target_url):
+        flash("Target URL must be an absolute http/https URL.", "error")
+        return render_template("url_form.html", form_mode="create", form=form), 400
+
+    if not _is_valid_slug(slug):
+        flash("Slug must be 3-64 characters and use letters, numbers, '_' or '-'.", "error")
+        return render_template("url_form.html", form_mode="create", form=form), 400
+
+    try:
+        Url.create(
+            user=user,
+            slug=slug,
+            target_url=target_url,
+            metadata_title=metadata_title or None,
+            metadata_description=metadata_description or None,
+            metadata_tags=metadata_tags or None,
+        )
+    except IntegrityError:
+        flash("Slug already exists. Try a different one.", "error")
+        return render_template("url_form.html", form_mode="create", form=form), 409
+
+    flash("Short URL created.", "success")
     return redirect(url_for("shortener.dashboard"))
 
 
 @shortener_bp.route("/urls/<int:url_id>/edit", methods=["GET", "POST"])
 @_login_required
-def edit_url(_user: User, url_id: int):
-    flash(f"Edit URL {url_id} is coming next.", "error")
+def edit_url(user: User, url_id: int):
+    url_obj = Url.get_or_none((Url.id == url_id) & (Url.user == user))
+    if url_obj is None:
+        flash("URL not found.", "error")
+        return redirect(url_for("shortener.dashboard"))
+
+    if request.method == "GET":
+        return render_template(
+            "url_form.html",
+            form_mode="edit",
+            url_obj=url_obj,
+            form={
+                "target_url": url_obj.target_url,
+                "slug": url_obj.slug,
+                "metadata_title": url_obj.metadata_title or "",
+                "metadata_description": url_obj.metadata_description or "",
+                "metadata_tags": url_obj.metadata_tags or "",
+            },
+        )
+
+    target_url = request.form.get("target_url", "").strip()
+    slug = request.form.get("slug", "").strip()
+    metadata_title = request.form.get("metadata_title", "").strip()
+    metadata_description = request.form.get("metadata_description", "").strip()
+    metadata_tags = request.form.get("metadata_tags", "").strip()
+
+    form = {
+        "target_url": target_url,
+        "slug": slug,
+        "metadata_title": metadata_title,
+        "metadata_description": metadata_description,
+        "metadata_tags": metadata_tags,
+    }
+
+    if not target_url or not slug:
+        flash("Target URL and slug are required.", "error")
+        return render_template("url_form.html", form_mode="edit", url_obj=url_obj, form=form), 400
+
+    if not _is_valid_url(target_url):
+        flash("Target URL must be an absolute http/https URL.", "error")
+        return render_template("url_form.html", form_mode="edit", url_obj=url_obj, form=form), 400
+
+    if not _is_valid_slug(slug):
+        flash("Slug must be 3-64 characters and use letters, numbers, '_' or '-'.", "error")
+        return render_template("url_form.html", form_mode="edit", url_obj=url_obj, form=form), 400
+
+    url_obj.slug = slug
+    url_obj.target_url = target_url
+    url_obj.metadata_title = metadata_title or None
+    url_obj.metadata_description = metadata_description or None
+    url_obj.metadata_tags = metadata_tags or None
+    url_obj.updated_at = dt.datetime.utcnow()
+
+    try:
+        url_obj.save()
+    except IntegrityError:
+        flash("Slug already exists. Try a different one.", "error")
+        return render_template("url_form.html", form_mode="edit", url_obj=url_obj, form=form), 409
+
+    flash("Short URL updated.", "success")
     return redirect(url_for("shortener.dashboard"))
 
 
 @shortener_bp.post("/urls/<int:url_id>/delete")
 @_login_required
-def delete_url(_user: User, url_id: int):
-    flash(f"Delete URL {url_id} is coming next.", "error")
+def delete_url(user: User, url_id: int):
+    url_obj = Url.get_or_none((Url.id == url_id) & (Url.user == user))
+    if url_obj is None:
+        flash("URL not found.", "error")
+        return redirect(url_for("shortener.dashboard"))
+
+    url_obj.delete_instance()
+    flash("Short URL deleted.", "success")
     return redirect(url_for("shortener.dashboard"))
 
 
