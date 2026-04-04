@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ metadata_title or "Redirecting..." }}</title>
+
+    {% if metadata_description %}
+    <meta name="description" content="{{ metadata_description }}" />
+    {% endif %}
+    {% if metadata_tags %}
+    <meta name="keywords" content="{{ metadata_tags }}" />
+    {% endif %}
+
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="{{ target_url }}" />
+    <meta property="og:title" content="{{ metadata_title or 'Redirecting...' }}" />
+    {% if metadata_description %}
+    <meta property="og:description" content="{{ metadata_description }}" />
+    {% endif %}
+
+    <meta http-equiv="refresh" content="0;url={{ target_url }}" />
+  </head>
+  <body>
+    <p>Redirecting to <a href="{{ target_url }}">{{ target_url }}</a>...</p>
+    <script>
+      window.location.replace({{ target_url | tojson }});
+    </script>
+  </body>
+</html>

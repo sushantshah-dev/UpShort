@@ -22,7 +22,10 @@ def init_db(app):
 
     @app.before_request
     def _db_connect():
-        db.connect(reuse_if_open=True)
+        try:
+            db.connect(reuse_if_open=True)
+        except Exception:
+            pass
 
     @app.teardown_appcontext
     def _db_close(exc):
