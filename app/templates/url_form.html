@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}{% if form_mode == 'edit' %}Edit URL{% else %}Create URL{% endif %}{% endblock %}
+{% block content %}
+<h2>{% if form_mode == 'edit' %}Edit URL{% else %}Create URL{% endif %}</h2>
+<p>Fields marked with * are required.</p>
+
+<form method="post">
+  <p>
+    <label for="target_url">Target URL *</label><br>
+    <input id="target_url" name="target_url" type="url" required value="{{ form.target_url or '' }}" placeholder="https://example.com/page">
+  </p>
+
+  <p>
+    <label for="slug">Slug *</label><br>
+    <input id="slug" name="slug" type="text" required value="{{ form.slug or '' }}" placeholder="my-custom-slug"><br>
+    <small>Allowed: letters, numbers, '-' and '_', 3-64 chars.</small>
+  </p>
+
+  <h3>Metadata</h3>
+
+  <p>
+    <label for="metadata_title">Metadata Title</label><br>
+    <input id="metadata_title" name="metadata_title" type="text" value="{{ form.metadata_title or '' }}">
+  </p>
+
+  <p>
+    <label for="metadata_description">Metadata Description</label><br>
+    <textarea id="metadata_description" name="metadata_description" rows="4">{{ form.metadata_description or '' }}</textarea>
+  </p>
+
+  <p>
+    <label for="metadata_tags">Metadata Tags (comma-separated)</label><br>
+    <input id="metadata_tags" name="metadata_tags" type="text" value="{{ form.metadata_tags or '' }}" placeholder="marketing,campaign,spring-launch">
+  </p>
+
+  <p>
+    <button type="submit">{% if form_mode == 'edit' %}Update URL{% else %}Create URL{% endif %}</button>
+    <a href="{{ url_for('shortener.dashboard') }}">Cancel</a>
+  </p>
+</form>
+{% endblock %}
