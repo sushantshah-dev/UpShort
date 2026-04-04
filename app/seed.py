@@ -84,15 +84,13 @@ def _insert_in_batches(model, rows: list[dict], batch_size: int = 500) -> None:
 
 
 def _sync_pk_sequence(table_name: str) -> None:
-    db.execute_sql(
-        f"""
+    db.execute_sql(f"""
         SELECT setval(
             pg_get_serial_sequence('{table_name}', 'id'),
             COALESCE((SELECT MAX(id) FROM "{table_name}"), 1),
             (SELECT COUNT(*) > 0 FROM "{table_name}")
         )
-        """
-    )
+        """)
 
 
 def _sync_all_sequences() -> None:
