@@ -6,9 +6,10 @@ import re
 from urllib.parse import urlparse
 
 from flask import request
-from peewee import IntegrityError, OperationalError
+from peewee import OperationalError
 
 from app.cache import short_url_cache
+from app.metrics import record_cache_lookup
 from app.models.url import Url
 from app.models.visitor import Visitor
 
@@ -20,6 +21,7 @@ _RESERVED_SLUGS = {
     "health",
     "login",
     "logout",
+    "metrics",
     "register",
     "urls",
     "static",
@@ -146,7 +148,36 @@ def _hydrate_cache_from_db(slug: str) -> tuple[dict, str] | tuple[None, None]:
         return None, None
 
     cache_url(url_obj)
+    record_cache_lookup("database", "hit")
     return build_url_payload(url_obj), "database"
+
+
+def cache_tier_header_value(source: str | None) -> str:
+    if source == "memory":
+        return "local"
+    if source == "redis":
+        return "shared"
+    return "fresh"
+
+
+def _upsert_visitor_visit(
+    url_obj: Url,
+    fingerprint: str,
+    now: dt.datetime,
+) -> bool:
+    database = Visitor._meta.database
+    cursor = database.execute_sql(
+        """
+        INSERT INTO short_url_visitors (short_url_id, fingerprint, first_seen_at, last_seen_at)
+        VALUES (%s, %s, %s, %s)
+        ON CONFLICT (short_url_id, fingerprint)
+        DO UPDATE SET last_seen_at = EXCLUDED.last_seen_at
+        RETURNING (xmax = 0) AS inserted
+        """,
+        (url_obj.id, fingerprint, now, now),
+    )
+    row = cursor.fetchone()
+    return bool(row[0]) if row else False
 
 
 def record_redirect_visit(url_obj: Url) -> None:
@@ -159,24 +190,7 @@ def record_redirect_visit(url_obj: Url) -> None:
     fingerprint_source = f"{client_ip or 'unknown'}|{user_agent}"
     visitor_fingerprint = hashlib.sha256(fingerprint_source.encode("utf-8")).hexdigest()
 
-    new_visitor = False
-    try:
-        Visitor.create(
-            short_url=url_obj,
-            fingerprint=visitor_fingerprint,
-            first_seen_at=now,
-            last_seen_at=now,
-        )
-        new_visitor = True
-    except IntegrityError:
-        (
-            Visitor.update(last_seen_at=now)
-            .where(
-                (Visitor.short_url == url_obj)
-                & (Visitor.fingerprint == visitor_fingerprint)
-            )
-            .execute()
-        )
+    new_visitor = _upsert_visitor_visit(url_obj, visitor_fingerprint, now)
 
     url_obj.click_count += 1
     if new_visitor:

@@ -7,6 +7,7 @@ from playhouse.migrate import PostgresqlMigrator, migrate
 
 from app.cache import short_url_cache
 from app.database import db, init_db
+from app.metrics import instrument_app, record_bootstrap_attempt, record_bootstrap_retry
 from app.models import ALL_MODELS
 from app.routes import register_routes
 from app.seed import seed_database_if_empty
@@ -24,8 +25,10 @@ def create_app():
     app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-change-me")
 
     init_db(app)
+    instrument_app(app)
 
     db_bootstrap_state = {"ready": False}
+    bootstrap_attempts = {"count": 0}
 
     def _ensure_url_state_columns() -> None:
         migrator = PostgresqlMigrator(db)
@@ -52,14 +55,20 @@ def create_app():
         if db_bootstrap_state["ready"]:
             return True
 
+        bootstrap_attempts["count"] += 1
+        if bootstrap_attempts["count"] > 1:
+            record_bootstrap_retry()
+
         try:
             db.connect(reuse_if_open=True)
             db.create_tables(ALL_MODELS, safe=True)
             _ensure_url_state_columns()
             seed_database_if_empty()
             db_bootstrap_state["ready"] = True
+            record_bootstrap_attempt("success")
             return True
         except OperationalError:
+            record_bootstrap_attempt("failure")
             return False
         finally:
             if not db.is_closed():

@@ -9,6 +9,7 @@ RUN pip install --no-cache-dir \
     "flask>=3.1" \
     "peewee>=3.17" \
     "psycopg2-binary>=2.9" \
+    "prometheus-client>=0.22" \
     "python-dotenv>=1.0" \
     "redis>=5.2"
 

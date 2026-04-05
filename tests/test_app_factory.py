@@ -60,6 +60,27 @@ class AppFactoryTestCase(unittest.TestCase):
         self.assertEqual(response.get_json()["checks"]["database"]["status"], "ok")
         self.assertEqual(response.get_json()["checks"]["cache"]["status"], "ok")
 
+    def test_create_app_exposes_prometheus_metrics(self):
+        fake_db = Mock()
+        fake_db.is_closed.return_value = True
+        fake_db.get_columns.return_value = [
+            types.SimpleNamespace(name="is_active"),
+            types.SimpleNamespace(name="expires_at"),
+        ]
+        fake_db.execute_sql.return_value = None
+
+        with patch("app.init_db"):
+            with patch("app.db", fake_db):
+                with patch("app.seed_database_if_empty"):
+                    with patch("app.short_url_cache.redis._ensure_client", return_value=None):
+                        app = create_app()
+                        response = app.test_client().get("/metrics")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn("projectvybe_http_requests_total", body)
+        self.assertIn("projectvybe_cache_operations_total", body)
+
     def test_create_app_handles_bootstrap_failure_and_retries(self):
         fake_db = Mock()
         fake_db.connect.side_effect = [OperationalError(), None, None]
