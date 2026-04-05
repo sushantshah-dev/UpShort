@@ -3,7 +3,13 @@ from __future__ import annotations
 import time
 
 from flask import Response, g, request
-from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
+from prometheus_client import (
+    CONTENT_TYPE_LATEST,
+    Counter,
+    Gauge,
+    Histogram,
+    generate_latest,
+)
 
 HTTP_REQUESTS_TOTAL = Counter(
     "upshort_http_requests_total",
@@ -39,6 +45,19 @@ BOOTSTRAP_RETRIES_TOTAL = Counter(
     "upshort_bootstrap_retries_total",
     "Database bootstrap retries attempted after startup.",
 )
+PROCESS_CPU_USAGE_PERCENT = Gauge(
+    "upshort_process_cpu_usage_percent",
+    "Approximate CPU usage of the Flask process since the previous metrics scrape.",
+)
+PROCESS_RESIDENT_MEMORY_BYTES = Gauge(
+    "upshort_process_resident_memory_bytes",
+    "Resident memory currently used by the Flask process in bytes.",
+)
+
+_PROCESS_CPU_STATE = {
+    "cpu_time": None,
+    "monotonic_time": None,
+}
 
 
 def _request_path_label() -> str:
@@ -82,6 +101,42 @@ def record_bootstrap_retry() -> None:
     BOOTSTRAP_RETRIES_TOTAL.inc()
 
 
+def _collect_process_cpu_percent() -> float:
+    cpu_time = time.process_time()
+    monotonic_time = time.perf_counter()
+    previous_cpu_time = _PROCESS_CPU_STATE["cpu_time"]
+    previous_monotonic_time = _PROCESS_CPU_STATE["monotonic_time"]
+    _PROCESS_CPU_STATE["cpu_time"] = cpu_time
+    _PROCESS_CPU_STATE["monotonic_time"] = monotonic_time
+
+    if previous_cpu_time is None or previous_monotonic_time is None:
+        return 0.0
+
+    elapsed = monotonic_time - previous_monotonic_time
+    if elapsed <= 0:
+        return 0.0
+
+    cpu_delta = max(cpu_time - previous_cpu_time, 0.0)
+    return (cpu_delta / elapsed) * 100.0
+
+
+def _collect_process_resident_memory_bytes() -> int:
+    try:
+        with open("/proc/self/status", "r", encoding="utf-8") as status_file:
+            for line in status_file:
+                if line.startswith("VmRSS:"):
+                    parts = line.split()
+                    return int(parts[1]) * 1024
+    except OSError:
+        pass
+    return 0
+
+
+def _update_process_metrics() -> None:
+    PROCESS_CPU_USAGE_PERCENT.set(_collect_process_cpu_percent())
+    PROCESS_RESIDENT_MEMORY_BYTES.set(_collect_process_resident_memory_bytes())
+
+
 def instrument_app(app) -> None:
     if app.extensions.get("upshort_metrics_instrumented"):
         return
@@ -122,6 +177,7 @@ def instrument_app(app) -> None:
 
     @app.route("/metrics")
     def metrics():
+        _update_process_metrics()
         return Response(generate_latest(), mimetype=CONTENT_TYPE_LATEST)
 
     app.extensions["upshort_metrics_instrumented"] = True

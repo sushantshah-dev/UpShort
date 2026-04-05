@@ -1,0 +1,90 @@
+groups:
+  - name: UpShort-app
+    rules:
+      - alert: AppTargetDown
+        expr: up{job="upshort-app"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: UpShort app target is down
+          description: Prometheus has been unable to scrape the Flask app for at least 2 minutes.
+
+      - alert: BootstrapFailuresDetected
+        expr: increase(upshort_bootstrap_attempts_total{result="failure"}[10m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: Database bootstrap failures detected
+          description: The application reported one or more failed bootstrap attempts in the last 10 minutes.
+
+      - alert: Elevated5xxRate
+        expr: |
+          (
+            sum(rate(upshort_http_requests_total{status=~"5.."}[5m]))
+            /
+            clamp_min(sum(rate(upshort_http_requests_total[5m])), 0.001)
+          ) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Elevated 5xx response rate
+          description: More than 5% of HTTP responses have been 5xx for the last 2 minutes.
+
+      - alert: SlowRequestsP95
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(upshort_http_request_latency_seconds_bucket[5m]))
+          ) > 1.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Request latency p95 is elevated
+          description: The 95th percentile request latency has stayed above 1.5 seconds for 5 minutes.
+
+  - name: UpShort-host
+    rules:
+      - alert: HostLoadAboveNinetyPercent
+        expr: |
+          node_load1
+          /
+          count without (cpu, mode) (node_cpu_seconds_total{mode="idle"})
+          > 0.9
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: Host load is above 90%
+          description: 1-minute host load has been above 90% of available CPU capacity for at least 2 minutes.
+
+      - alert: HostMemoryPressure
+        expr: |
+          (
+            1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)
+          ) > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Host memory usage is above 90%
+          description: Available memory has remained below 10% for at least 5 minutes.
+
+      - alert: HostDiskPressure
+        expr: |
+          (
+            1 - (
+              node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"}
+              /
+              node_filesystem_size_bytes{fstype!~"tmpfs|overlay"}
+            )
+          ) > 0.9
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Host disk usage is above 90%
+          description: A mounted filesystem has been above 90% utilization for at least 10 minutes.
