@@ -2,7 +2,14 @@ from __future__ import annotations
 
 import datetime as dt
 
-from peewee import CharField, DateTimeField, ForeignKeyField, IntegerField, TextField
+from peewee import (
+    BooleanField,
+    CharField,
+    DateTimeField,
+    ForeignKeyField,
+    IntegerField,
+    TextField,
+)
 
 from app.database import BaseModel
 from app.models.user import User
@@ -12,6 +19,8 @@ class Url(BaseModel):
     user = ForeignKeyField(User, backref="urls", on_delete="CASCADE")
     slug = CharField(max_length=64, unique=True, index=True)
     target_url = TextField()
+    is_active = BooleanField(default=True)
+    expires_at = DateTimeField(null=True)
     metadata_title = CharField(max_length=255, null=True)
     metadata_description = TextField(null=True)
     metadata_tags = CharField(max_length=255, null=True)
