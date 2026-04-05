@@ -9,6 +9,8 @@ from typing import Any
 
 from redis import Redis
 
+from app.metrics import record_cache_delete, record_cache_lookup, record_cache_write
+
 
 class InMemoryCache:
     def __init__(self, max_items: int = 5000):
@@ -122,13 +124,16 @@ class UrlCache:
     def get(self, slug: str) -> tuple[dict[str, Any] | None, str | None]:
         in_memory = self.memory.get(slug)
         if in_memory is not None:
+            record_cache_lookup("memory", "hit")
             return in_memory, "memory"
 
         from_redis = self.redis.get(slug)
         if from_redis is None:
+            record_cache_lookup("none", "miss")
             return None, None
 
         self.memory.set(slug, from_redis)
+        record_cache_lookup("redis", "hit")
         return from_redis, "redis"
 
     def set(
@@ -156,11 +161,15 @@ class UrlCache:
         }
 
         self.memory.set(slug, payload)
+        record_cache_write("memory")
         self.redis.set(slug, payload)
+        record_cache_write("redis")
 
     def delete(self, slug: str) -> None:
         self.memory.delete(slug)
+        record_cache_delete("memory")
         self.redis.delete(slug)
+        record_cache_delete("redis")
 
     def increment_click_count(self, slug: str) -> None:
         cached = self.memory.get(slug)

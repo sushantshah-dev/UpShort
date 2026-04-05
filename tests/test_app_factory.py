@@ -30,19 +30,21 @@ class AppFactoryTestCase(unittest.TestCase):
 
         with patch("app.load_dotenv") as load_dotenv:
             with patch("app.init_db") as init_db:
-                with patch("app.db", fake_db):
-                    with patch("app.PostgresqlMigrator", return_value=fake_migrator):
-                        with patch("app.migrate") as migrate:
-                            with patch("app.seed_database_if_empty") as seed:
-                                with patch("app.register_routes") as register:
-                                    with patch(
-                                        "app.short_url_cache.redis._ensure_client",
-                                        return_value=fake_redis_client,
-                                    ):
-                                        app = create_app()
-                                        response = app.test_client().get("/health")
+                with patch("app.configure_logging") as configure_logging:
+                    with patch("app.db", fake_db):
+                        with patch("app.PostgresqlMigrator", return_value=fake_migrator):
+                            with patch("app.migrate") as migrate:
+                                with patch("app.seed_database_if_empty") as seed:
+                                    with patch("app.register_routes") as register:
+                                        with patch(
+                                            "app.short_url_cache.redis._ensure_client",
+                                            return_value=fake_redis_client,
+                                        ):
+                                            app = create_app()
+                                            response = app.test_client().get("/health")
 
         load_dotenv.assert_called_once()
+        configure_logging.assert_called_once_with(app)
         init_db.assert_called_once()
         fake_db.connect.assert_called_with(reuse_if_open=True)
         fake_db.create_tables.assert_called_once()
@@ -59,6 +61,29 @@ class AppFactoryTestCase(unittest.TestCase):
         self.assertEqual(response.get_json()["checks"]["cache"]["code"], 0)
         self.assertEqual(response.get_json()["checks"]["database"]["status"], "ok")
         self.assertEqual(response.get_json()["checks"]["cache"]["status"], "ok")
+
+    def test_create_app_exposes_prometheus_metrics(self):
+        fake_db = Mock()
+        fake_db.is_closed.return_value = True
+        fake_db.get_columns.return_value = [
+            types.SimpleNamespace(name="is_active"),
+            types.SimpleNamespace(name="expires_at"),
+        ]
+        fake_db.execute_sql.return_value = None
+
+        with patch("app.init_db"):
+            with patch("app.db", fake_db):
+                with patch("app.seed_database_if_empty"):
+                    with patch("app.short_url_cache.redis._ensure_client", return_value=None):
+                        app = create_app()
+                        response = app.test_client().get("/metrics")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn("upshort_http_requests_total", body)
+        self.assertIn("upshort_cache_operations_total", body)
+        self.assertIn("upshort_process_cpu_usage_percent", body)
+        self.assertIn("upshort_process_resident_memory_bytes", body)
 
     def test_create_app_handles_bootstrap_failure_and_retries(self):
         fake_db = Mock()

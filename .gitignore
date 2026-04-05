@@ -26,6 +26,8 @@ uv.lock
 # pytest
 .pytest_cache/
 
+logs/
+
 # OS
 .DS_Store
 Thumbs.db

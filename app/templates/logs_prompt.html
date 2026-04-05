@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Unlock Logs{% endblock %}
+{% block content %}
+<h2>Unlock Logs</h2>
+<p>Signed in as {{ user.email }}</p>
+<p>Enter the logs password from the server environment to view application logs.</p>
+
+<form method="post" action="{{ url_for('dashboard.logs') }}">
+  <p>
+    <label for="password">Logs Password</label><br>
+    <input id="password" name="password" type="password" required>
+  </p>
+  <p>
+    <button type="submit">Unlock Logs</button>
+    <a href="{{ url_for('dashboard.dashboard') }}">Cancel</a>
+  </p>
+</form>
+{% endblock %}

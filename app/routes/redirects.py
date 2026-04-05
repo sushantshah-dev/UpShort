@@ -1,12 +1,14 @@
-from flask import Blueprint, abort, make_response, render_template
+from flask import Blueprint, abort, current_app, make_response, render_template
 from peewee import OperationalError
 
 from app.cache import short_url_cache
+from app.metrics import record_fallback_usage
 from app.models.url import Url
 from app.utils import (
     _hydrate_cache_from_db,
     _is_resource_inactive,
     _isoformat_or_none,
+    cache_tier_header_value,
     cache_url,
     record_redirect_visit,
 )
@@ -40,6 +42,7 @@ def resolve_short_url(slug: str):
         else:
             short_url_cache.increment_click_count(slug)
     except OperationalError:
+        record_fallback_usage("redirect_click_count_cache_only")
         short_url_cache.increment_click_count(slug)
 
     html = render_template(
@@ -51,4 +54,11 @@ def resolve_short_url(slug: str):
     )
     response = make_response(html, 302)
     response.headers["Location"] = url_payload["target_url"]
+    response.headers["X-Cache-Tier"] = cache_tier_header_value(_source)
+    current_app.logger.info(
+        "redirect served",
+        extra={
+            "location": url_payload["target_url"],
+        },
+    )
     return response

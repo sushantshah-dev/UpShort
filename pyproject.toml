@@ -3,9 +3,32 @@ name = "mlh-pe-hackathon"
 version = "0.1.0"
 requires-python = ">=3.13"
 dependencies = [
-    "faker>=33.0",
     "flask>=3.1",
     "peewee>=3.17",
     "psycopg2-binary>=2.9",
+    "prometheus-client>=0.22",
     "python-dotenv>=1.0",
+    "redis>=5.2",
 ]
+
+[project.optional-dependencies]
+dev = [
+    "coverage>=7.6",
+    "pytest>=8.3",
+    "pytest-cov>=6.0",
+]
+
+[tool.black]
+target-version = ["py313"]
+
+[tool.coverage.run]
+branch = true
+source = ["app"]
+
+[tool.coverage.report]
+fail_under = 70
+omit = ["tests/*"]
+show_missing = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

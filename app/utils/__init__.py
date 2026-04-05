@@ -3,12 +3,15 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import re
+import secrets
 from urllib.parse import urlparse
 
-from flask import request
-from peewee import IntegrityError, OperationalError
+from flask import jsonify, request
+from peewee import OperationalError
+from werkzeug.exceptions import BadRequest
 
 from app.cache import short_url_cache
+from app.metrics import record_cache_lookup
 from app.models.url import Url
 from app.models.visitor import Visitor
 
@@ -20,6 +23,7 @@ _RESERVED_SLUGS = {
     "health",
     "login",
     "logout",
+    "metrics",
     "register",
     "urls",
     "static",
@@ -41,6 +45,78 @@ def _is_valid_slug(slug: str) -> bool:
 
 def _is_valid_email(candidate: str) -> bool:
     return bool(_EMAIL_RE.fullmatch(candidate)) and len(candidate) <= 255
+
+
+def _prefers_json_response() -> bool:
+    if request.is_json:
+        return True
+
+    best = request.accept_mimetypes.best_match(["application/json", "text/html"])
+    if best != "application/json":
+        return False
+
+    return (
+        request.accept_mimetypes["application/json"]
+        >= request.accept_mimetypes["text/html"]
+    )
+
+
+def json_error(message: str, status_code: int, *, error_type: str = "invalid_request"):
+    response = jsonify(
+        {
+            "error": {
+                "type": error_type,
+                "message": message,
+                "status": status_code,
+            }
+        }
+    )
+    response.status_code = status_code
+    return response
+
+
+def load_json_object() -> tuple[dict, None] | tuple[None, tuple]:
+    if request.mimetype != "application/json" and not request.mimetype.endswith(
+        "+json"
+    ):
+        return None, (
+            json_error(
+                "Request body must use Content-Type: application/json.",
+                415,
+                error_type="unsupported_media_type",
+            ),
+            415,
+        )
+
+    try:
+        payload = request.get_json(silent=False)
+    except BadRequest:
+        return None, (
+            json_error(
+                "Malformed JSON request body.", 400, error_type="malformed_json"
+            ),
+            400,
+        )
+
+    if not isinstance(payload, dict):
+        return None, (
+            json_error(
+                "JSON request body must be an object.",
+                400,
+                error_type="invalid_request",
+            ),
+            400,
+        )
+
+    return payload, None
+
+
+def generate_slug(length: int = 8) -> str:
+    alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    slug = "".join(secrets.choice(alphabet) for _ in range(length))
+    if _is_valid_slug(slug):
+        return slug
+    return generate_slug(length)
 
 
 def _extract_client_ip() -> str | None:
@@ -146,7 +222,36 @@ def _hydrate_cache_from_db(slug: str) -> tuple[dict, str] | tuple[None, None]:
         return None, None
 
     cache_url(url_obj)
+    record_cache_lookup("database", "hit")
     return build_url_payload(url_obj), "database"
+
+
+def cache_tier_header_value(source: str | None) -> str:
+    if source == "memory":
+        return "local"
+    if source == "redis":
+        return "shared"
+    return "fresh"
+
+
+def _upsert_visitor_visit(
+    url_obj: Url,
+    fingerprint: str,
+    now: dt.datetime,
+) -> bool:
+    database = Visitor._meta.database
+    cursor = database.execute_sql(
+        """
+        INSERT INTO short_url_visitors (short_url_id, fingerprint, first_seen_at, last_seen_at)
+        VALUES (%s, %s, %s, %s)
+        ON CONFLICT (short_url_id, fingerprint)
+        DO UPDATE SET last_seen_at = EXCLUDED.last_seen_at
+        RETURNING (xmax = 0) AS inserted
+        """,
+        (url_obj.id, fingerprint, now, now),
+    )
+    row = cursor.fetchone()
+    return bool(row[0]) if row else False
 
 
 def record_redirect_visit(url_obj: Url) -> None:
@@ -159,24 +264,7 @@ def record_redirect_visit(url_obj: Url) -> None:
     fingerprint_source = f"{client_ip or 'unknown'}|{user_agent}"
     visitor_fingerprint = hashlib.sha256(fingerprint_source.encode("utf-8")).hexdigest()
 
-    new_visitor = False
-    try:
-        Visitor.create(
-            short_url=url_obj,
-            fingerprint=visitor_fingerprint,
-            first_seen_at=now,
-            last_seen_at=now,
-        )
-        new_visitor = True
-    except IntegrityError:
-        (
-            Visitor.update(last_seen_at=now)
-            .where(
-                (Visitor.short_url == url_obj)
-                & (Visitor.fingerprint == visitor_fingerprint)
-            )
-            .execute()
-        )
+    new_visitor = _upsert_visitor_visit(url_obj, visitor_fingerprint, now)
 
     url_obj.click_count += 1
     if new_visitor:
