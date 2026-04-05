@@ -66,17 +66,29 @@ class UrlCacheTestCase(unittest.TestCase):
     def test_get_prefers_memory_then_redis(self):
         cache = UrlCache()
         with patch.object(cache.memory, "get", return_value={"slug": "abc"}):
-            payload, source = cache.get("abc")
+            with patch("app.cache.record_cache_lookup") as record_cache_lookup:
+                payload, source = cache.get("abc")
         self.assertEqual(source, "memory")
         self.assertEqual(payload["slug"], "abc")
+        record_cache_lookup.assert_called_once_with("memory", "hit")
 
         with patch.object(cache.memory, "get", return_value=None):
             with patch.object(cache.redis, "get", return_value={"slug": "abc"}):
                 with patch.object(cache.memory, "set") as memory_set:
-                    payload, source = cache.get("abc")
+                    with patch("app.cache.record_cache_lookup") as record_cache_lookup:
+                        payload, source = cache.get("abc")
         self.assertEqual(source, "redis")
         memory_set.assert_called_once()
         self.assertEqual(payload["slug"], "abc")
+        record_cache_lookup.assert_called_once_with("redis", "hit")
+
+        with patch.object(cache.memory, "get", return_value=None):
+            with patch.object(cache.redis, "get", return_value=None):
+                with patch("app.cache.record_cache_lookup") as record_cache_lookup:
+                    payload, source = cache.get("missing")
+        self.assertIsNone(payload)
+        self.assertIsNone(source)
+        record_cache_lookup.assert_called_once_with("none", "miss")
 
     def test_set_delete_and_increment_click_count(self):
         cache = UrlCache()
@@ -84,27 +96,31 @@ class UrlCacheTestCase(unittest.TestCase):
 
         with patch.object(cache.memory, "set") as memory_set:
             with patch.object(cache.redis, "set") as redis_set:
-                cache.set(
-                    slug="abc",
-                    target_url="https://example.com",
-                    click_count=2,
-                    created_at=created_at,
-                    is_active=False,
-                    expires_at=created_at,
-                    metadata_title="Title",
-                )
+                with patch("app.cache.record_cache_write") as record_cache_write:
+                    cache.set(
+                        slug="abc",
+                        target_url="https://example.com",
+                        click_count=2,
+                        created_at=created_at,
+                        is_active=False,
+                        expires_at=created_at,
+                        metadata_title="Title",
+                    )
 
         memory_payload = memory_set.call_args.args[1]
         self.assertEqual(memory_payload["click_count"], 2)
         self.assertFalse(memory_payload["is_active"])
         self.assertEqual(memory_payload["expires_at"], created_at.isoformat() + "Z")
         redis_set.assert_called_once()
+        self.assertEqual(record_cache_write.call_count, 2)
 
         with patch.object(cache.memory, "delete") as memory_delete:
             with patch.object(cache.redis, "delete") as redis_delete:
-                cache.delete("abc")
+                with patch("app.cache.record_cache_delete") as record_cache_delete:
+                    cache.delete("abc")
         memory_delete.assert_called_once_with("abc")
         redis_delete.assert_called_once_with("abc")
+        self.assertEqual(record_cache_delete.call_count, 2)
 
         with patch.object(cache.memory, "get", return_value={"click_count": 1}):
             with patch.object(cache.memory, "set") as memory_set:

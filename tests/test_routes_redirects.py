@@ -72,6 +72,7 @@ class RedirectRoutesTestCase(unittest.TestCase):
 
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.headers["Location"], "https://example.com/abc")
+        self.assertEqual(response.headers["X-Cache-Tier"], "local")
         increment_click_count.assert_called_once_with("abc")
 
     def test_resolve_short_url_redirects_and_records_visit(self):
@@ -92,6 +93,46 @@ class RedirectRoutesTestCase(unittest.TestCase):
 
         self.assertEqual(response.status_code, 302)
         record_visit.assert_called_once_with(url_obj)
+
+    def test_resolve_short_url_sets_shared_header_for_redis_source(self):
+        payload = {
+            "slug": "abc",
+            "target_url": "https://example.com/abc",
+            "is_active": True,
+            "expires_at": None,
+        }
+        with patch(
+            "app.routes.redirects._hydrate_cache_from_db",
+            return_value=(payload, "redis"),
+        ):
+            with patch("app.routes.redirects.Url.get_or_none", return_value=None):
+                with patch(
+                    "app.routes.redirects.short_url_cache.increment_click_count"
+                ):
+                    response = self.client.get("/abc")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers["X-Cache-Tier"], "shared")
+
+    def test_resolve_short_url_sets_fresh_header_for_database_source(self):
+        payload = {
+            "slug": "abc",
+            "target_url": "https://example.com/abc",
+            "is_active": True,
+            "expires_at": None,
+        }
+        with patch(
+            "app.routes.redirects._hydrate_cache_from_db",
+            return_value=(payload, "database"),
+        ):
+            with patch("app.routes.redirects.Url.get_or_none", return_value=None):
+                with patch(
+                    "app.routes.redirects.short_url_cache.increment_click_count"
+                ):
+                    response = self.client.get("/abc")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers["X-Cache-Tier"], "fresh")
 
     def test_resolve_short_url_handles_operational_error_with_fallback(self):
         payload = {

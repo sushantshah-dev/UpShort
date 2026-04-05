@@ -3,9 +3,13 @@ import unittest
 from unittest.mock import Mock, patch
 
 import app.utils as links
+from tests.support import create_test_app
 
 
 class LinksUtilsTestCase(unittest.TestCase):
+    def setUp(self):
+        self.app = create_test_app()
+
     def test_is_valid_url_accepts_http_and_https(self):
         self.assertTrue(links._is_valid_url("https://example.com/path"))
         self.assertTrue(links._is_valid_url("http://example.com"))
@@ -20,6 +24,7 @@ class LinksUtilsTestCase(unittest.TestCase):
         self.assertFalse(links._is_valid_slug("ab"))
         self.assertFalse(links._is_valid_slug("bad slug"))
         self.assertFalse(links._is_valid_slug("login"))
+        self.assertFalse(links._is_valid_slug("metrics"))
 
     def test_detect_device_type_mobile_desktop_other(self):
         self.assertEqual(links._detect_device_type("Mozilla/5.0 (iPhone)"), "mobile")
@@ -108,3 +113,53 @@ class LinksUtilsTestCase(unittest.TestCase):
         self.assertTrue(payload["is_active"])
         self.assertIsNone(payload["expires_at"])
         cache_set.assert_called_once()
+
+    def test_cache_tier_header_value_maps_sources(self):
+        self.assertEqual(links.cache_tier_header_value("memory"), "local")
+        self.assertEqual(links.cache_tier_header_value("redis"), "shared")
+        self.assertEqual(links.cache_tier_header_value("database"), "fresh")
+        self.assertEqual(links.cache_tier_header_value(None), "fresh")
+
+    def test_record_redirect_visit_uses_conflict_safe_upsert(self):
+        url_obj = Mock(
+            id=42,
+            slug="abc",
+            target_url="https://example.com/abc",
+            click_count=3,
+            unique_visitor_count=1,
+            first_clicked_at=None,
+            last_clicked_at=None,
+            last_referrer=None,
+            last_visitor_ip=None,
+            last_user_agent=None,
+            mobile_click_count=0,
+            desktop_click_count=0,
+            other_device_click_count=0,
+            updated_at=None,
+            created_at=dt.datetime(2026, 1, 1, 0, 0, 0),
+            is_active=True,
+            expires_at=None,
+            metadata_title=None,
+            metadata_description=None,
+            metadata_tags=None,
+        )
+        cursor = Mock()
+        cursor.fetchone.return_value = (True,)
+
+        with self.app.test_request_context(
+            "/abc",
+            headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64)"},
+            environ_base={"REMOTE_ADDR": "203.0.113.5"},
+        ):
+            with patch("app.utils._upsert_visitor_visit", return_value=True) as upsert_visitor_visit:
+                with patch("app.utils.cache_url") as cache_url:
+                    links.record_redirect_visit(url_obj)
+
+        upsert_visitor_visit.assert_called_once()
+        self.assertEqual(url_obj.click_count, 4)
+        self.assertEqual(url_obj.unique_visitor_count, 2)
+        self.assertIsNotNone(url_obj.first_clicked_at)
+        self.assertIsNotNone(url_obj.last_clicked_at)
+        self.assertEqual(url_obj.last_visitor_ip, "203.0.113.5")
+        self.assertEqual(url_obj.last_user_agent, "Mozilla/5.0 (X11; Linux x86_64)")
+        cache_url.assert_called_once_with(url_obj)

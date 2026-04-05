@@ -1,4 +1,4 @@
-from flask import Blueprint, abort, make_response, render_template
+from flask import Blueprint, abort, current_app, make_response, render_template
 from peewee import OperationalError
 
 from app.cache import short_url_cache
@@ -55,6 +55,10 @@ def resolve_short_url(slug: str):
     response = make_response(html, 302)
     response.headers["Location"] = url_payload["target_url"]
     response.headers["X-Cache-Tier"] = cache_tier_header_value(_source)
-    print(f"Redirecting to: {url_payload['target_url']}")
-    print(f"Cache tier: {_source}")
+    current_app.logger.info(
+        "redirect served",
+        extra={
+            "location": url_payload["target_url"],
+        },
+    )
     return response
