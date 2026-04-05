@@ -12,4 +12,4 @@ scrape_configs:
     metrics_path: /metrics
     static_configs:
       - targets:
-          - upshort:5000
+          - app:5000
