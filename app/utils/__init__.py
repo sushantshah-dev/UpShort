@@ -76,7 +76,9 @@ def json_error(message: str, status_code: int, *, error_type: str = "invalid_req
 
 
 def load_json_object() -> tuple[dict, None] | tuple[None, tuple]:
-    if request.mimetype != "application/json" and not request.mimetype.endswith("+json"):
+    if request.mimetype != "application/json" and not request.mimetype.endswith(
+        "+json"
+    ):
         return None, (
             json_error(
                 "Request body must use Content-Type: application/json.",
@@ -90,7 +92,9 @@ def load_json_object() -> tuple[dict, None] | tuple[None, tuple]:
         payload = request.get_json(silent=False)
     except BadRequest:
         return None, (
-            json_error("Malformed JSON request body.", 400, error_type="malformed_json"),
+            json_error(
+                "Malformed JSON request body.", 400, error_type="malformed_json"
+            ),
             400,
         )
 

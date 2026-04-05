@@ -23,7 +23,9 @@ def _serialize_url(url_obj: Url) -> dict:
         "slug": url_obj.slug,
         "target_url": url_obj.target_url,
         "is_active": url_obj.is_active,
-        "expires_at": url_obj.expires_at.isoformat() + "Z" if url_obj.expires_at else None,
+        "expires_at": (
+            url_obj.expires_at.isoformat() + "Z" if url_obj.expires_at else None
+        ),
         "metadata_title": url_obj.metadata_title,
         "metadata_description": url_obj.metadata_description,
         "metadata_tags": url_obj.metadata_tags,
@@ -37,12 +39,15 @@ def _is_same_url_request(url_obj: Url, user: User, form: dict[str, str | bool]) 
         and url_obj.is_active == form["is_active"]
         and url_obj.expires_at == form["expires_at"]
         and (url_obj.metadata_title or None) == (form["metadata_title"] or None)
-        and (url_obj.metadata_description or None) == (form["metadata_description"] or None)
+        and (url_obj.metadata_description or None)
+        == (form["metadata_description"] or None)
         and (url_obj.metadata_tags or None) == (form["metadata_tags"] or None)
     )
 
 
-def _create_url_with_retries(user: User, form: dict[str, str | bool], *, max_attempts: int = 4):
+def _create_url_with_retries(
+    user: User, form: dict[str, str | bool], *, max_attempts: int = 4
+):
     generated_slug = not bool(form.get("slug"))
     attempted_form = dict(form)
     last_error = None
@@ -69,7 +74,9 @@ def _create_url_with_retries(user: User, form: dict[str, str | bool], *, max_att
                 existing = Url.get_or_none(Url.slug == attempted_form["slug"])
             except OperationalError:
                 return None, False, exc
-            if existing is not None and _is_same_url_request(existing, user, attempted_form):
+            if existing is not None and _is_same_url_request(
+                existing, user, attempted_form
+            ):
                 return existing, True, None
             if not generated_slug:
                 return None, False, exc
@@ -101,12 +108,18 @@ def create_url(user: User):
     url_obj, reused_existing, create_error = _create_url_with_retries(user, form)
     if isinstance(create_error, IntegrityError):
         if _prefers_json_response():
-            return json_error("Slug already exists. Try a different one.", 409, error_type="conflict")
+            return json_error(
+                "Slug already exists. Try a different one.", 409, error_type="conflict"
+            )
         flash("Slug already exists. Try a different one.", "error")
         return render_template("url_form.html", form_mode="create", form=form), 409
     if isinstance(create_error, OperationalError):
         if _prefers_json_response():
-            return json_error("Database is temporarily unavailable. Please try again.", 503, error_type="database_unavailable")
+            return json_error(
+                "Database is temporarily unavailable. Please try again.",
+                503,
+                error_type="database_unavailable",
+            )
         flash("Database is temporarily unavailable. Please try again.", "error")
         return render_template("url_form.html", form_mode="create", form=form), 503
 
@@ -125,7 +138,11 @@ def edit_url(user: User, url_id: int):
         url_obj = Url.get_or_none((Url.id == url_id) & (Url.user == user))
     except OperationalError:
         if _prefers_json_response():
-            return json_error("Database is temporarily unavailable. Please try again.", 503, error_type="database_unavailable")
+            return json_error(
+                "Database is temporarily unavailable. Please try again.",
+                503,
+                error_type="database_unavailable",
+            )
         flash("Database is temporarily unavailable. Please try again.", "error")
         return redirect(url_for("dashboard.dashboard"))
 
@@ -189,7 +206,9 @@ def edit_url(user: User, url_id: int):
         url_obj.save()
     except IntegrityError:
         if _prefers_json_response():
-            return json_error("Slug already exists. Try a different one.", 409, error_type="conflict")
+            return json_error(
+                "Slug already exists. Try a different one.", 409, error_type="conflict"
+            )
         flash("Slug already exists. Try a different one.", "error")
         return (
             render_template(
@@ -199,7 +218,11 @@ def edit_url(user: User, url_id: int):
         )
     except OperationalError:
         if _prefers_json_response():
-            return json_error("Database is temporarily unavailable. Please try again.", 503, error_type="database_unavailable")
+            return json_error(
+                "Database is temporarily unavailable. Please try again.",
+                503,
+                error_type="database_unavailable",
+            )
         flash("Database is temporarily unavailable. Please try again.", "error")
         return (
             render_template(
@@ -225,7 +248,11 @@ def delete_url(user: User, url_id: int):
         url_obj = Url.get_or_none((Url.id == url_id) & (Url.user == user))
     except OperationalError:
         if _prefers_json_response():
-            return json_error("Database is temporarily unavailable. Please try again.", 503, error_type="database_unavailable")
+            return json_error(
+                "Database is temporarily unavailable. Please try again.",
+                503,
+                error_type="database_unavailable",
+            )
         flash("Database is temporarily unavailable. Please try again.", "error")
         return redirect(url_for("dashboard.dashboard"))
 
@@ -240,7 +267,11 @@ def delete_url(user: User, url_id: int):
         url_obj.delete_instance()
     except OperationalError:
         if _prefers_json_response():
-            return json_error("Database is temporarily unavailable. Please try again.", 503, error_type="database_unavailable")
+            return json_error(
+                "Database is temporarily unavailable. Please try again.",
+                503,
+                error_type="database_unavailable",
+            )
         flash("Database is temporarily unavailable. Please try again.", "error")
         return redirect(url_for("dashboard.dashboard"))
 

@@ -273,7 +273,12 @@ def _validate_registration_json() -> tuple[dict[str, str], str | None, tuple | N
         return {}, None, error_response
 
     email, email_error = _get_json_value(
-        payload, "email", required=True, lower=True, max_length=_MAX_EMAIL_LENGTH, label="Email"
+        payload,
+        "email",
+        required=True,
+        lower=True,
+        max_length=_MAX_EMAIL_LENGTH,
+        label="Email",
     )
     if email_error:
         return {"email": email or ""}, email_error, None
@@ -305,11 +310,15 @@ def _validate_registration_json() -> tuple[dict[str, str], str | None, tuple | N
     if password != confirm_password:
         return {"email": email}, "Passwords do not match.", None
 
-    return {
-        "email": email,
-        "password": password,
-        "confirm_password": confirm_password,
-    }, None, None
+    return (
+        {
+            "email": email,
+            "password": password,
+            "confirm_password": confirm_password,
+        },
+        None,
+        None,
+    )
 
 
 def _validate_login_json() -> tuple[dict[str, str], str | None, tuple | None]:
@@ -318,7 +327,12 @@ def _validate_login_json() -> tuple[dict[str, str], str | None, tuple | None]:
         return {}, None, error_response
 
     email, email_error = _get_json_value(
-        payload, "email", required=True, lower=True, max_length=_MAX_EMAIL_LENGTH, label="Email"
+        payload,
+        "email",
+        required=True,
+        lower=True,
+        max_length=_MAX_EMAIL_LENGTH,
+        label="Email",
     )
     if email_error:
         return {"email": email or ""}, email_error, None
@@ -339,17 +353,21 @@ def _validate_login_json() -> tuple[dict[str, str], str | None, tuple | None]:
     return {"email": email, "password": password}, None, None
 
 
-def _validate_url_json() -> tuple[dict[str, str | bool | None], str | None, tuple | None]:
+def _validate_url_json() -> (
+    tuple[dict[str, str | bool | None], str | None, tuple | None]
+):
     payload, error_response = load_json_object()
     if error_response:
         return {}, None, error_response
 
     target_url, target_url_error = _get_json_value(
-        payload, "target_url", required=True, max_length=_MAX_URL_LENGTH, label="Target URL"
+        payload,
+        "target_url",
+        required=True,
+        max_length=_MAX_URL_LENGTH,
+        label="Target URL",
     )
-    slug, slug_error = _get_json_value(
-        payload, "slug", max_length=64, label="Slug"
-    )
+    slug, slug_error = _get_json_value(payload, "slug", max_length=64, label="Slug")
     is_active, is_active_error = _get_json_bool_value(
         payload, "is_active", default=True, label="Link status"
     )

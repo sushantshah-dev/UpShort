@@ -39,7 +39,9 @@ def register():
         )
     except IntegrityError:
         if _prefers_json_response():
-            return json_error("That email is already registered.", 409, error_type="conflict")
+            return json_error(
+                "That email is already registered.", 409, error_type="conflict"
+            )
         flash("That email is already registered.", "error")
         return render_template("register.html", email=form["email"]), 409
 
@@ -71,7 +73,9 @@ def login():
     user = User.get_or_none(User.email == form["email"])
     if user is None or not check_password_hash(user.password_hash, form["password"]):
         if _prefers_json_response():
-            return json_error("Invalid email or password.", 401, error_type="authentication_failed")
+            return json_error(
+                "Invalid email or password.", 401, error_type="authentication_failed"
+            )
         flash("Invalid email or password.", "error")
         return render_template("login.html", email=form["email"]), 401
 
