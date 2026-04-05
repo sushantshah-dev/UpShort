@@ -1,9 +1,10 @@
 import os
 
 from dotenv import load_dotenv
-from flask import Flask, jsonify
+from flask import Flask
 from peewee import BooleanField, DateTimeField, OperationalError
 from playhouse.migrate import PostgresqlMigrator, migrate
+from werkzeug.exceptions import HTTPException
 
 from app.cache import short_url_cache
 from app.database import db, init_db
@@ -11,6 +12,7 @@ from app.metrics import instrument_app, record_bootstrap_attempt, record_bootstr
 from app.models import ALL_MODELS
 from app.routes import register_routes
 from app.seed import seed_database_if_empty
+from app.utils import _prefers_json_response, json_error
 
 HEALTH_BOOTSTRAP_INCOMPLETE = 1 << 0
 HEALTH_DB_UNAVAILABLE = 1 << 1
@@ -85,7 +87,21 @@ def create_app():
 
     @app.errorhandler(OperationalError)
     def _database_unavailable(_exc):
-        return jsonify(error="database temporarily unavailable"), 503
+        return {"error": "database temporarily unavailable"}, 503
+
+    @app.errorhandler(HTTPException)
+    def _http_error(exc):
+        if _prefers_json_response():
+            return json_error(exc.description, exc.code or 500, error_type="http_error")
+        return exc
+
+    @app.errorhandler(Exception)
+    def _unexpected_error(_exc):
+        return json_error(
+            "An unexpected error occurred.",
+            500,
+            error_type="internal_error",
+        )
 
     def _format_health_status(mask: int) -> str:
         return format(mask, "04b")
@@ -192,6 +208,6 @@ def create_app():
     @app.route("/health")
     def health():
         payload, status_code = _collect_health_checks()
-        return jsonify(payload), status_code
+        return payload, status_code
 
     return app

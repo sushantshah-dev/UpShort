@@ -3,10 +3,12 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import re
+import secrets
 from urllib.parse import urlparse
 
-from flask import request
+from flask import jsonify, request
 from peewee import OperationalError
+from werkzeug.exceptions import BadRequest
 
 from app.cache import short_url_cache
 from app.metrics import record_cache_lookup
@@ -43,6 +45,74 @@ def _is_valid_slug(slug: str) -> bool:
 
 def _is_valid_email(candidate: str) -> bool:
     return bool(_EMAIL_RE.fullmatch(candidate)) and len(candidate) <= 255
+
+
+def _prefers_json_response() -> bool:
+    if request.is_json:
+        return True
+
+    best = request.accept_mimetypes.best_match(["application/json", "text/html"])
+    if best != "application/json":
+        return False
+
+    return (
+        request.accept_mimetypes["application/json"]
+        >= request.accept_mimetypes["text/html"]
+    )
+
+
+def json_error(message: str, status_code: int, *, error_type: str = "invalid_request"):
+    response = jsonify(
+        {
+            "error": {
+                "type": error_type,
+                "message": message,
+                "status": status_code,
+            }
+        }
+    )
+    response.status_code = status_code
+    return response
+
+
+def load_json_object() -> tuple[dict, None] | tuple[None, tuple]:
+    if request.mimetype != "application/json" and not request.mimetype.endswith("+json"):
+        return None, (
+            json_error(
+                "Request body must use Content-Type: application/json.",
+                415,
+                error_type="unsupported_media_type",
+            ),
+            415,
+        )
+
+    try:
+        payload = request.get_json(silent=False)
+    except BadRequest:
+        return None, (
+            json_error("Malformed JSON request body.", 400, error_type="malformed_json"),
+            400,
+        )
+
+    if not isinstance(payload, dict):
+        return None, (
+            json_error(
+                "JSON request body must be an object.",
+                400,
+                error_type="invalid_request",
+            ),
+            400,
+        )
+
+    return payload, None
+
+
+def generate_slug(length: int = 8) -> str:
+    alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    slug = "".join(secrets.choice(alphabet) for _ in range(length))
+    if _is_valid_slug(slug):
+        return slug
+    return generate_slug(length)
 
 
 def _extract_client_ip() -> str | None:
