@@ -78,8 +78,8 @@ class AppFactoryTestCase(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         body = response.get_data(as_text=True)
-        self.assertIn("projectvybe_http_requests_total", body)
-        self.assertIn("projectvybe_cache_operations_total", body)
+        self.assertIn("upshort_http_requests_total", body)
+        self.assertIn("upshort_cache_operations_total", body)
 
     def test_create_app_handles_bootstrap_failure_and_retries(self):
         fake_db = Mock()
