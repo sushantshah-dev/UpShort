@@ -1,13 +1,16 @@
+import logging
 import os
+import time
 
 from dotenv import load_dotenv
-from flask import Flask
+from flask import Flask, g
 from peewee import BooleanField, DateTimeField, OperationalError
 from playhouse.migrate import PostgresqlMigrator, migrate
 from werkzeug.exceptions import HTTPException
 
 from app.cache import short_url_cache
 from app.database import db, init_db
+from app.logging_config import configure_logging, log_exception
 from app.metrics import instrument_app, record_bootstrap_attempt, record_bootstrap_retry
 from app.models import ALL_MODELS
 from app.routes import register_routes
@@ -25,6 +28,9 @@ def create_app():
 
     app = Flask(__name__)
     app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-change-me")
+    app.config["LOG_VIEWER_PASSWORD"] = os.environ.get("LOG_VIEWER_PASSWORD", "")
+    configure_logging(app)
+    app.logger.info("application startup")
 
     init_db(app)
     instrument_app(app)
@@ -68,9 +74,15 @@ def create_app():
             seed_database_if_empty()
             db_bootstrap_state["ready"] = True
             record_bootstrap_attempt("success")
+            app.logger.info("database bootstrap completed")
             return True
-        except OperationalError:
+        except OperationalError as exc:
             record_bootstrap_attempt("failure")
+            log_exception(
+                app.logger,
+                exc,
+                message="database bootstrap failed",
+            )
             return False
         finally:
             if not db.is_closed():
@@ -86,7 +98,8 @@ def create_app():
     register_routes(app)
 
     @app.errorhandler(OperationalError)
-    def _database_unavailable(_exc):
+    def _database_unavailable(exc):
+        log_exception(app.logger, exc, message="database unavailable")
         return {"error": "database temporarily unavailable"}, 503
 
     @app.errorhandler(HTTPException)
@@ -96,7 +109,8 @@ def create_app():
         return exc
 
     @app.errorhandler(Exception)
-    def _unexpected_error(_exc):
+    def _unexpected_error(exc):
+        log_exception(app.logger, exc, message="unexpected application error")
         return json_error(
             "An unexpected error occurred.",
             500,
@@ -209,5 +223,33 @@ def create_app():
     def health():
         payload, status_code = _collect_health_checks()
         return payload, status_code
+
+    @app.before_request
+    def _start_request_logging():
+        g._request_started_at = time.perf_counter()
+
+    @app.after_request
+    def _log_request(response):
+        level = logging.INFO
+        if response.status_code >= 500:
+            level = logging.ERROR
+        elif response.status_code >= 400:
+            level = logging.WARNING
+
+        started_at = getattr(g, "_request_started_at", None)
+        duration_ms = None
+        if started_at is not None:
+            duration_ms = (time.perf_counter() - started_at) * 1000
+
+        app.logger.log(
+            level,
+            "request completed",
+            extra={
+                "status_code": response.status_code,
+                "location": response.headers.get("Location"),
+                "duration_ms": duration_ms,
+            },
+        )
+        return response
 
     return app

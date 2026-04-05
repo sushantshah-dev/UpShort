@@ -1,4 +1,5 @@
 import unittest
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 from peewee import OperationalError
@@ -22,6 +23,61 @@ class UrlRoutesTestCase(unittest.TestCase):
                 response = self.client.get("/dashboard")
 
         self.assertEqual(response.status_code, 200)
+
+    def test_logs_requires_login(self):
+        signed_out_client = create_test_app().test_client()
+
+        response = signed_out_client.get("/logs")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/login", response.location)
+
+    def test_logs_requires_password_prompt(self):
+        with patch("app.auth._current_user", return_value=Mock(id=1, email="user@example.com")):
+            response = self.client.get("/logs")
+
+        self.assertEqual(response.status_code, 401)
+        self.assertIn("Unlock Logs", response.get_data(as_text=True))
+
+    def test_logs_rejects_incorrect_password(self):
+        with patch("app.auth._current_user", return_value=Mock(id=1, email="user@example.com")):
+            response = self.client.post("/logs", data={"password": "wrong"})
+
+        self.assertEqual(response.status_code, 401)
+        self.assertIn("Incorrect logs password.", response.get_data(as_text=True))
+        with self.client.session_transaction() as session:
+            self.assertNotIn("logs_unlocked", session)
+
+    def test_logs_renders_recent_entries_after_password_prompt(self):
+        log_path = Path(self.app.config["LOG_FILE_PATH"])
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_path.write_text(
+            '{"timestamp":"2026-04-05T00:00:00+00:00","level":"ERROR","logger":"app","message":"boom"}\n'
+            '{"timestamp":"2026-04-05T00:00:01+00:00","level":"INFO","logger":"app","message":"ok"}\n',
+            encoding="utf-8",
+        )
+
+        with patch("app.auth._current_user", return_value=Mock(id=1, email="user@example.com")):
+            unlock_response = self.client.post(
+                "/logs",
+                data={"password": self.app.config["LOG_VIEWER_PASSWORD"]},
+            )
+            response = self.client.get("/logs?lines=1")
+
+        self.assertEqual(unlock_response.status_code, 200)
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn("ok", body)
+        self.assertNotIn("boom", body)
+
+    def test_logs_returns_503_when_password_not_configured(self):
+        self.app.config["LOG_VIEWER_PASSWORD"] = ""
+
+        with patch("app.auth._current_user", return_value=Mock(id=1, email="user@example.com")):
+            response = self.client.get("/logs")
+
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("Logs password is not configured.", response.get_data(as_text=True))
 
     def test_create_url_get_renders_form(self):
         with patch("app.auth._current_user", return_value=Mock(id=1)):

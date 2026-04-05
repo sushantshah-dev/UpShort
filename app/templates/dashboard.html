@@ -4,6 +4,7 @@
 <h2>Your URLs</h2>
 <p>Signed in as {{ user.email }}</p>
 <p><a href="{{ url_for('urls.create_url') }}">Create URL</a></p>
+<p><a href="{{ url_for('dashboard.logs') }}">View application logs</a></p>
 
 {% if urls %}
 <table border="1" cellpadding="6" cellspacing="0">

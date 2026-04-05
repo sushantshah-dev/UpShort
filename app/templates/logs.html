@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Logs{% endblock %}
+{% block content %}
+<h2>Application Logs</h2>
+<p>Signed in as {{ user.email }}</p>
+<p>Showing the most recent {{ lines }} log lines from the server log file.</p>
+<p><a href="{{ url_for('dashboard.dashboard') }}">Back to dashboard</a></p>
+
+{% if entries %}
+<table border="1" cellpadding="6" cellspacing="0">
+  <thead>
+    <tr>
+      <th>Timestamp</th>
+      <th>Level</th>
+      <th>Host</th>
+      <th>Logger</th>
+      <th>Message</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for entry in entries %}
+    <tr>
+      <td>{{ entry.timestamp or '-' }}</td>
+      <td>{{ entry.level or '-' }}</td>
+      <td>{{ entry.hostname or '-' }}</td>
+      <td>{{ entry.logger or '-' }}</td>
+      <td>
+        <strong>{{ entry.message or '-' }}</strong><br>
+        {% if entry.path %}Path: {{ entry.path }}<br>{% endif %}
+        {% if entry.method %}Method: {{ entry.method }}<br>{% endif %}
+        {% if entry.status_code %}Status: {{ entry.status_code }}<br>{% endif %}
+        {% if entry.duration_ms is not none %}Duration: {{ entry.duration_ms }} ms<br>{% endif %}
+        {% if entry.location %}Location: {{ entry.location }}<br>{% endif %}
+        {% if entry.exception %}<pre>{{ entry.exception }}</pre>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+  <p>No log entries found yet.</p>
+{% endif %}
+{% endblock %}
